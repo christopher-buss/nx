@@ -75,6 +75,8 @@ export { getEnvPathsForTask } from './tasks-runner/task-env-paths';
 export {
   hashDaemonClientEnv,
   getDaemonClientEnvGeneration,
+  getAppliedDaemonClientEnv,
+  applyDaemonEnvFromClient,
 } from './daemon/client/daemon-environment';
 export { isCI } from './utils/is-ci';
 export { isUsingPrettierInTree } from './utils/is-using-prettier';
