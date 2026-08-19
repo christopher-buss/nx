@@ -123,6 +123,7 @@ import {
   isDaemonDisabled,
   removeSocketDir,
 } from '../tmp-dir';
+import { TASK_GRAPH_NOT_REGISTERED } from '../message-types/hash-tasks';
 import {
   DaemonSocketMessenger,
   VersionMismatchError,
@@ -179,6 +180,11 @@ export class DaemonClient {
 
   private _enabled: boolean | undefined;
   private _daemonStatus: DaemonStatus = DaemonStatus.DISCONNECTED;
+
+  // Task graphs already sent to the daemon, so subsequent HASH_TASKS
+  // messages for the same graph only reference it by id.
+  private registeredTaskGraphIds = new WeakMap<TaskGraph, string>();
+  private taskGraphIdCounter = 0;
   private _waitForDaemonReady: Promise<void> | null = null;
   private _daemonReady: () => void | null = null;
 
@@ -339,7 +345,7 @@ export class DaemonClient {
     return await this.sendToDaemonViaQueue({ type: 'REQUEST_FILE_DATA' });
   }
 
-  hashTasks(
+  async hashTasks(
     runnerOptions: any,
     tasks: Task[],
     taskGraph: TaskGraph,
@@ -347,11 +353,33 @@ export class DaemonClient {
     cwd: string,
     collectInputs?: boolean
   ): Promise<Hash[]> {
+    const taskIds = tasks.map((task) => task.id);
+    let taskGraphId = this.registeredTaskGraphIds.get(taskGraph);
+    if (taskGraphId) {
+      const response = await this.sendToDaemonViaQueue({
+        type: 'HASH_TASKS',
+        runnerOptions,
+        perTaskEnvs,
+        taskIds,
+        taskGraphId,
+        cwd,
+        collectInputs,
+      });
+      if (response !== TASK_GRAPH_NOT_REGISTERED) {
+        return response;
+      }
+      // The daemon lost the graph despite the connection-scoped registry
+      // (should not happen); re-send it below.
+    } else {
+      taskGraphId = `${process.pid}-${this.taskGraphIdCounter++}`;
+      this.registeredTaskGraphIds.set(taskGraph, taskGraphId);
+    }
     return this.sendToDaemonViaQueue({
       type: 'HASH_TASKS',
       runnerOptions,
       perTaskEnvs,
-      tasks,
+      taskIds,
+      taskGraphId,
       taskGraph,
       cwd,
       collectInputs,
@@ -1068,6 +1096,10 @@ export class DaemonClient {
   }
 
   private setUpConnection() {
+    // A new connection means a fresh daemon-side registry: anything
+    // registered over the previous connection is gone.
+    this.registeredTaskGraphIds = new WeakMap();
+
     const socketPath = this.getSocketPath();
 
     const socket = connect(socketPath);

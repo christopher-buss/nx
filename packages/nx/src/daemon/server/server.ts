@@ -115,7 +115,10 @@ import { handleGetRegisteredSyncGenerators } from './handle-get-registered-sync-
 import { handleGetSyncGeneratorChanges } from './handle-get-sync-generator-changes';
 import { handleGlob, handleMultiGlob } from './handle-glob';
 import { handleHashGlob, handleHashMultiGlob } from './handle-hash-glob';
-import { handleHashTasks } from './handle-hash-tasks';
+import {
+  handleHashTasks,
+  removeRegisteredTaskGraphs,
+} from './handle-hash-tasks';
 import {
   handleGetNxConsoleStatus,
   handleSetNxConsolePreferenceAndInstall,
@@ -210,6 +213,7 @@ const server = createServer(async (socket) => {
     serverLogger.log(`Socket error: ${e.message}`);
     removeRegisteredFileWatcherSocket(socket);
     removeRegisteredProjectGraphListenerSocket(socket);
+    removeRegisteredTaskGraphs(socket);
   });
 
   socket.on('close', () => {
@@ -221,6 +225,7 @@ const server = createServer(async (socket) => {
 
     removeRegisteredFileWatcherSocket(socket);
     removeRegisteredProjectGraphListenerSocket(socket);
+    removeRegisteredTaskGraphs(socket);
   });
 });
 registerProcessTerminationListeners();
@@ -302,7 +307,7 @@ async function handleMessage(socket: Socket, data: string) {
     await handleResult(
       socket,
       'HASH_TASKS',
-      () => handleHashTasks(payload),
+      () => handleHashTasks(payload, socket),
       mode
     );
   } else if (payload.type === 'PROCESS_IN_BACKGROUND') {
